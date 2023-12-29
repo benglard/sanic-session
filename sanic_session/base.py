@@ -5,6 +5,7 @@ import uuid
 
 import ujson
 
+from sanic import HTTPResponse
 from sanic_session.utils import CallbackDict
 
 
@@ -48,41 +49,32 @@ class BaseSessionInterface(metaclass=abc.ABCMeta):
         self.session_name = session_name
         self.secure = secure
 
-    def _delete_cookie(self, request, response):
-        req = get_request_container(request)
-        response.cookies[self.cookie_name] = req[self.session_name].sid
-
-        # We set expires/max-age even for session cookies to force expiration
-        response.cookies[self.cookie_name][
-            "expires"
-        ] = datetime.datetime.utcnow()
-        response.cookies[self.cookie_name]["max-age"] = 0
+    def _delete_cookie(self, request, response: HTTPResponse):
+        response.delete_cookie(self.cookie_name)
 
     @staticmethod
     def _calculate_expires(expiry):
         expires = time.time() + expiry
         return datetime.datetime.fromtimestamp(expires)
 
-    def _set_cookie_props(self, request, response):
+    def _set_cookie_props(self, request, response: HTTPResponse):
         req = get_request_container(request)
-        response.cookies[self.cookie_name] = req[self.session_name].sid
-        response.cookies[self.cookie_name]["httponly"] = self.httponly
-
-        # Set expires and max-age unless we are using session cookies
+        
+        expires, max_age = None, None
         if not self.sessioncookie:
-            response.cookies[self.cookie_name][
-                "expires"
-            ] = self._calculate_expires(self.expiry)
-            response.cookies[self.cookie_name]["max-age"] = self.expiry
+            expires = self._calculate_expires(self.expiry)
+            max_age = self.expiry
 
-        if self.domain:
-            response.cookies[self.cookie_name]["domain"] = self.domain
-
-        if self.samesite is not None:
-            response.cookies[self.cookie_name]["samesite"] = self.samesite
-
-        if self.secure:
-            response.cookies[self.cookie_name]["secure"] = True
+        response.add_cookie(
+            self.cookie_name,
+            req[self.session_name].sid,
+            httponly=self.httponly,
+            expires=expires,
+            max_age=max_age,
+            domain=self.domain,
+            samesite=self.samesite,
+            secure=self.secure,
+        )
 
     @abc.abstractmethod
     async def _get_value(self, prefix: str, sid: str):
