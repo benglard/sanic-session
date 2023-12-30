@@ -12,9 +12,6 @@ from sanic_session.utils import CallbackDict
 def get_request_container(request):
     return request.ctx.__dict__ if hasattr(request, "ctx") else request
 
-def get_response_container(response):
-    return response.response if isinstance(response, ResponseStream) else response
-
 class SessionDict(CallbackDict):
     def __init__(self, initial=None, sid=None):
         def on_update(self):
@@ -52,7 +49,10 @@ class BaseSessionInterface(metaclass=abc.ABCMeta):
         self.secure = secure
 
     def _delete_cookie(self, request, response):
-        get_response_container(response).delete_cookie(self.cookie_name)
+        if isinstance(response, ResponseStream):
+            return # hmm
+
+        response.delete_cookie(self.cookie_name)
 
     @staticmethod
     def _calculate_expires(expiry):
@@ -60,6 +60,9 @@ class BaseSessionInterface(metaclass=abc.ABCMeta):
         return datetime.datetime.fromtimestamp(expires)
 
     def _set_cookie_props(self, request, response):
+        if isinstance(response, ResponseStream):
+            return # hmm
+
         req = get_request_container(request)
         
         expires, max_age = None, None
@@ -67,7 +70,7 @@ class BaseSessionInterface(metaclass=abc.ABCMeta):
             expires = self._calculate_expires(self.expiry)
             max_age = self.expiry
 
-        get_response_container(response).add_cookie(
+        response.add_cookie(
             self.cookie_name,
             req[self.session_name].sid,
             httponly=self.httponly,
