@@ -2,6 +2,7 @@ import warnings
 from datetime import datetime, timedelta
 
 from sanic_session.base import BaseSessionInterface
+from motor.motor_asyncio import AsyncIOMotorCollection
 
 try:
     from sanic_motor import BaseModel
@@ -28,7 +29,8 @@ class MongoDBSessionInterface(BaseSessionInterface):
     def __init__(
         self,
         app,
-        coll: str = "session",
+        # coll: str = "session",
+        coll: AsyncIOMotorCollection,
         domain: str = None,
         expiry: int = 30 * 24 * 60 * 60,
         httponly: bool = True,
@@ -110,32 +112,39 @@ class MongoDBSessionInterface(BaseSessionInterface):
         )
 
         # set collection name
-        _SessionModel.__coll__ = coll
+        # _SessionModel.__coll__ = coll
+        self.coll = coll
 
         @app.listener("after_server_start")
         async def apply_session_indexes(app, loop):
             """Create indexes in session collection
             if doesn't exist.
-
             Indexes:
                 sid:
                     For faster lookup.
                 expiry:
                     For document expiration.
             """
-            await _SessionModel.create_index("sid")
-            await _SessionModel.create_index("expiry", expireAfterSeconds=0)
+            await self.coll.create_index("sid")
+            await self.coll.create_index("expiry", expireAfterSeconds=0)
 
     async def _get_value(self, prefix, key):
-        value = await _SessionModel.find_one({"sid": key}, as_raw=True)
+        # value = await _SessionModel.find_one({"sid": key}, as_raw=True)
+        value = await self.coll.find_one({"sid": key})
         return value["data"] if value else None
 
     async def _delete_key(self, key):
-        await _SessionModel.delete_one({"sid": key})
+        # await _SessionModel.delete_one({"sid": key})
+        await self.coll.delete_one({"sid": key})
 
     async def _set_value(self, key, data):
         expiry = datetime.utcnow() + timedelta(seconds=self.expiry)
-        await _SessionModel.replace_one(
+        # await _SessionModel.replace_one(
+        #     {"sid": key},
+        #     {"sid": key, "expiry": expiry, "data": data},
+        #     upsert=True,
+        # )
+        await self.coll.replace_one(
             {"sid": key},
             {"sid": key, "expiry": expiry, "data": data},
             upsert=True,
